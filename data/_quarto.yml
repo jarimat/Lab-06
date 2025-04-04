@@ -1,6 +1,7 @@
 project:
   type: manuscript
   output-dir: docs
+  type: website
 
 manuscript:
   article: newlab6.qmd
@@ -18,3 +19,4 @@ format:
 
 execute:
   freeze: true
+   mirror: "https://cloud.r-project.org"

@@ -7,6 +7,7 @@ format:
     toc: true
     self-contained: true
 editor: visual
+output: html_document
 ---
 
 ```{r}
@@ -20,11 +21,8 @@ library(workflows)
 library(rsample)
 library(recipes)
 library(tune)
-install.packages("ranger")
 library(ranger)
-install.packages("xgboost")
 library(xgboost)
-install.packages("nnet")
 library(nnet)
 ```
 
