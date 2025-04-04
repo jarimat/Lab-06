@@ -1,13 +1,12 @@
 ---
-title: "Lab 6 - Machine Learning in Hydrology"
+project:
+  title: "Lab 6 - Machine Learning in Hydrology"
+  output-dir: docs
+  type: website
 author: Jake Matullo
 format:
   html:
-    code-fold: true
-    toc: true
     self-contained: true
-editor: visual
-output: html_document
 ---
 
 ```{r}
