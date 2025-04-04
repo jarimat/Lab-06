@@ -2,4 +2,35 @@
 title: "lab6"
 format: html
 ---
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(powerjoin)
+library(glue)
+library(vip)
+library(baguette)
+```
+```{r}
+root  <- 'https://gdex.ucar.edu/dataset/camels/file'
+
+download.file('https://gdex.ucar.edu/dataset/camels/file/camels_attributes_v2.0.pdf', 
+              'data/camels_attributes_v2.0.pdf')
+```
+```{r}
+types <- c("clim", "geol", "soil", "topo", "vege", "hydro")
+remote_files  <- glue('{root}/camels_{types}.txt')
+local_files   <- glue('data/camels_{types}.txt')
+```
+
+```{r}
+walk2(remote_files, local_files, download.file, quiet = TRUE)
+camels <- map(local_files, read_delim, show_col_types = FALSE) 
+```
+```{r}
+if (file.exists("data/camels_vege.txt")) {
+  print("File exists!")
+} else {
+  print("File does not exist.")
+}
+```
 

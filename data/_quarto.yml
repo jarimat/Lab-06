@@ -1,0 +1,20 @@
+project:
+  type: manuscript
+  output-dir: docs
+
+manuscript:
+  article: newlab6.qmd
+
+format:
+  html:
+    self-contained: true
+    comments:
+      hypothesis: true
+  docx: default
+  jats: default
+
+  # (other formats)
+  # pdf: default
+
+execute:
+  freeze: true
