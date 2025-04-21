@@ -1,0 +1,213 @@
+---
+title: "hyperparameter-tuning"
+subtitle: "Ecosystem Science and Sustainability 330"
+author: Jake Matullo
+format: html
+execute: 
+  echoe: true
+---
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(powerjoin)
+library(glue)
+library(vip)
+library(baguette)
+library(workflows)
+library(rsample)
+library(recipes)
+library(tune)
+library(ranger)
+library(xgboost)
+library(nnet)
+library(dplyr)
+library(patchwork)
+```
+
+```{r}
+root  <- 'https://gdex.ucar.edu/dataset/camels/file'
+
+download.file('https://gdex.ucar.edu/dataset/camels/file/camels_attributes_v2.0.pdf', 
+              'data/camels_attributes_v2.0.pdf')
+
+types <- c("clim", "geol", "soil", "topo", "vege", "hydro")
+remote_files  <- glue('{root}/camels_{types}.txt')
+local_files   <- glue('data/camels_{types}.txt')
+
+walk2(remote_files, local_files, download.file, quiet = TRUE)
+camels <- map(local_files, read_delim, show_col_types = FALSE) 
+
+camels <- map(local_files, read_delim, show_col_types = FALSE) 
+
+camels <- power_full_join(camels ,by = 'gauge_id')
+```
+
+```{r}
+camels %>% drop_na()
+```
+```{r}
+set.seed(123)
+camels_select8 <- camels %>%
+  mutate(logQmean = log(q_mean + 1)) %>%
+  select(logQmean, aridity, q_mean, p_mean, pet_mean, p_seasonality, gauge_lat, gauge_lon) %>%
+  drop_na()
+```
+
+```{r}
+camels_split8 <- initial_split(camels_select8, prop = 0.8)
+
+camels_train8 <- training(camels_split8)
+
+camels_test8  <- testing(camels_split8)
+
+camels_cv8 <- vfold_cv(camels_train8, v = 10)
+```
+
+```{r}
+rec8 <-  recipe(logQmean ~ ., data = camels_train8) %>%
+  step_rm(gauge_lon, gauge_lat) %>% 
+  step_normalize(all_predictors()) %>%
+  step_interact(terms = ~ aridity:q_mean)
+```
+
+```{r}
+rf_model8 <- rand_forest() %>%
+  set_engine("ranger") %>%
+  set_mode("regression")
+
+lm_model8 <- linear_reg() %>%
+  set_engine("lm") %>%
+  set_mode("regression")
+
+boost_model8 <- boost_tree() %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+```
+
+```{r}
+wf8 <- workflow_set(list(rec8), list(rf_model8, lm_model8, boost_model8)) %>%
+  workflow_map('fit_resamples', resamples = camels_cv8) 
+```
+
+```{r}
+autoplot(wf8)
+```
+The ideal model for this would be the boost tree, with the engine set to "xgboost" and the the mode set to "regression." This is due to the fact that it has the highest rsq score and the lowest rmse score. The reason for this high performance could be because the camels data just really fits well with a boost tree model when compared to the other models we tested.
+
+```{r}
+boost_model8 <- 
+  boost_tree(
+    trees = 1000,
+    tree_depth = tune(),       
+    loss_reduction = tune()) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+```
+
+```{r}
+new_wf8 <- workflow(rec8, boost_model8)
+```
+
+```{r}
+camels_metrics8 <- metric_set(rsq, rmse, mae)
+```
+
+```{r}
+dials <- extract_parameter_set_dials(new_wf8)
+```
+
+```{r}
+my.grid <- grid_space_filling(dials, size = 20)
+```
+
+```{r}
+model_params <-  tune_grid(
+    new_wf8,
+    resamples = camels_cv8,
+    grid = my.grid,
+    metrics = metric_set(rmse, rsq, mae),
+    control = control_grid(save_pred = TRUE)
+  )
+```
+
+```{r}
+autoplot(model_params)
+```
+```{r}
+collect_metrics(model_params)
+```
+The ideal MAE and RMSE are lower numbers, while the opposite is true for the RSQ. The numbers for all three kind of bounce around the place, with the tree depth results exhibiting the best results for two out of three was level 7.
+```{r}
+show_best(model_params, metric = "mae", n = 5)
+```
+```{r}
+show_best(model_params, metric = "rmse", n = 5)
+```
+```{r}
+show_best(model_params, metric = "rsq", n = 5)
+```
+As shown by the three above tibbles, the best tree depth level for most of the hyperparameters is level 7.
+```{r}
+hp_best <- select_best(model_params, metric = "rsq")
+```
+
+```{r}
+final_wf8 <- finalize_workflow(new_wf8, hp_best)
+
+fit = last_fit(final_wf8, camels_split8, metrics = camels_metrics8)
+```
+
+```{r}
+collect_metrics(fit)
+```
+The final model performs better all across the board, though usually only a hundredth of a decimal better or so. It is better than the training data results.
+
+```{r}
+collect_predictions(fit)
+```
+
+```{r}
+xx = fit(final_wf8, data = camels_test8) %>% 
+  augment(new_data = camels_test8)
+
+ggplot(data = xx, aes(x = gauge_lon, y = gauge_lat)) +
+  borders("state", colour = "gray50") +
+  geom_smooth(method = "lm") +
+  geom_abline() +
+  geom_point(aes(color = logQmean)) +
+  scale_color_gradient(low = "skyblue", high = "navy") +
+  theme_minimal()
+```
+```{r}
+finalfullfit = fit(final_wf8, data = camels_select8) %>%
+  augment(new_data = camels_select8) %>%
+  mutate(residuals = .pred - (logQmean)^2)
+
+g1 <- ggplot(data = finalfullfit, aes(x = gauge_lon, y = gauge_lat)) +
+  borders("state", colour = "gray50") +
+  geom_point(aes(color = .pred)) +
+  scale_color_gradient(low = "skyblue", high = "navy") +
+  theme_minimal()
+```
+
+```{r}
+print(g1)
+```
+
+```{r}
+g2 <- ggplot(data = finalfullfit, aes(x = gauge_lon, y = gauge_lat)) +
+  borders("state", colour = "gray50") +
+  geom_point(aes(color = residuals)) +
+  scale_color_gradient(low = "red", high = "green") +
+  theme_minimal()
+```
+
+```{r}
+print(g2)
+```
+
+```{r}
+(g1 + g2) + plot_annotation(title = "Combined Maps")
+```
+
