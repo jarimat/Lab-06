@@ -210,4 +210,4 @@ print(g2)
 ```{r}
 (g1 + g2) + plot_annotation(title = "Combined Maps")
 ```
-
+Above are my combined maps.
